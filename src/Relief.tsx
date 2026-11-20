@@ -2,12 +2,12 @@ import {useEffect,useMemo} from 'react';
 import {useThree} from '@react-three/fiber';
 import {BufferGeometry,Float32BufferAttribute,MeshDepthMaterial,RGBADepthPacking,DoubleSide,PlaneGeometry,ShaderMaterial,Color} from 'three';
 import type {Texture} from 'three';
-import type {DataBundle} from './data';
+import type {MapData} from './data';
 import {toWorld} from './data';
 
 // This thickness is a display plinth, not measured geology or extra elevation.
 export const plinthBottom=-26;
-export function buildSides(data:DataBundle,surface:BufferGeometry){
+export function buildSides(data:MapData,surface:BufferGeometry){
  const b=data.geo.bounds,vertices=surface.getAttribute('position'),segments=Math.round(Math.sqrt(vertices.count))-1,positions:number[]=[],colours:number[]=[];
  const point=(x:number,y:number)=>{
   const gx=Math.max(0,Math.min(segments-1e-6,(x-b[0])/(b[2]-b[0])*segments)),gy=Math.max(0,Math.min(segments-1e-6,(b[3]-y)/(b[3]-b[1])*segments));
@@ -44,7 +44,7 @@ export function makeTerrainDepth(uniforms:ShaderMaterial['uniforms']){
  return depth;
 }
 
-export default function Relief({data,surface,land,priority,change}:{data:DataBundle;surface:BufferGeometry;land:Texture;priority:boolean;change:boolean}){
+export default function Relief({data,surface,land,priority,change}:{data:MapData;surface:BufferGeometry;land:Texture;priority:boolean;change:boolean}){
  const {gl,invalidate}=useThree();
  const sides=useMemo(()=>buildSides(data,surface),[data,surface]);
  const bottom=useMemo(()=>{const b=data.geo.bounds;return new PlaneGeometry((b[2]-b[0])/1000,(b[3]-b[1])/1000).rotateX(-Math.PI/2);},[data]);

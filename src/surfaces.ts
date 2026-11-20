@@ -1,4 +1,4 @@
-import type { DataBundle } from './data';
+import type { DataBundle, MapData } from './data';
 export const ocean=[232,236,232],landColour=[183,195,181],forestColour=[47,88,62];
 export const lowPriority=[229,212,160],highPriority=[158,89,27];
 export const mix=(a:number[],b:number[],t:number)=>a.map((v,i)=>v*(1-t)+b[i]*t);
@@ -7,7 +7,7 @@ export async function imagePixels(file:string){const im=new Image();im.src=`./da
 export interface Surfaces{base:string;forest:string|null;priority:string;allocation:string;activity:string|null;land:ImageData;}
 function vectorLand(data:DataBundle){const b=data.geo.bounds,c=document.createElement('canvas');c.height=2048;c.width=Math.round(2048*(b[2]-b[0])/(b[3]-b[1]));const ctx=c.getContext('2d',{willReadFrequently:true})!;ctx.fillStyle='#FF0000';ctx.beginPath();for(const feature of data.geo.features.filter(f=>f.kind==='land'))for(const ring of feature.rings){ring.forEach(([x,y],i)=>{const px=(x-b[0])/(b[2]-b[0])*c.width,py=(b[3]-y)/(b[3]-b[1])*c.height;if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);});ctx.closePath();}ctx.fill('evenodd');return ctx.getImageData(0,0,c.width,c.height);}
 export async function makeFlatSurfaces(data:DataBundle):Promise<Surfaces>{
- const [land,forest]=await Promise.all([imagePixels(data.geo.land.low).catch(()=>vectorLand(data)),data.geo.forest.status==='ready'?imagePixels(data.geo.forest.low):null]);
+ const [land,forest]=await Promise.all([imagePixels(data.geo.land.low).catch(()=>vectorLand(data)),data.geo.forest.status==='ready'?imagePixels(data.geo.forest.low).catch(()=>null):null]);
  const canvas=document.createElement('canvas');canvas.width=land.width;canvas.height=land.height;const ctx=canvas.getContext('2d')!;const out=ctx.createImageData(land.width,land.height),fout=ctx.createImageData(land.width,land.height);
  const b=data.geo.bounds;
  for(let y=0;y<land.height;y++)for(let x=0;x<land.width;x++){
@@ -27,4 +27,4 @@ export async function makeFlatSurfaces(data:DataBundle):Promise<Surfaces>{
  if(data.conversion&&data.activity){const a=pctx.createImageData(g.width,g.height);for(let y=0;y<g.height;y++)for(let x=0;x<g.width;x++){const index=data.study.lookup[y*g.width+x];if(index<0)continue;const v=data.conversion[index],i=(y*g.width+x)*4;const colour=!Number.isFinite(v)?[142,149,141]:v===0?null:v<1?[218,201,170]:v<5?[207,161,108]:v<20?[185,113,63]:[158,71,45];if(!colour)continue;for(let j=0;j<3;j++)a.data[i+j]=colour[j];a.data[i+3]=235;}pctx.putImageData(a,0,0);activity=canvas.toDataURL('image/png');}
  return{base,forest:forestURL,priority,allocation,activity,land};
 }
-export function isLand(data:DataBundle,pixels:ImageData,x:number,y:number){const b=data.geo.bounds,u=(x-b[0])/(b[2]-b[0]),v=(b[3]-y)/(b[3]-b[1]);if(u<0||u>1||v<0||v>1)return false;return pixels.data[(Math.min(pixels.height-1,Math.floor(v*pixels.height))*pixels.width+Math.min(pixels.width-1,Math.floor(u*pixels.width)))*4]>127;}
+export function isLand(data:MapData,pixels:ImageData,x:number,y:number){const b=data.geo.bounds,u=(x-b[0])/(b[2]-b[0]),v=(b[3]-y)/(b[3]-b[1]);if(u<0||u>1||v<0||v>1)return false;return pixels.data[(Math.min(pixels.height-1,Math.floor(v*pixels.height))*pixels.width+Math.min(pixels.width-1,Math.floor(u*pixels.width)))*4]>127;}

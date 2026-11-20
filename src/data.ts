@@ -7,7 +7,9 @@ export interface Cell{index:number;id:string;col:number;row:number;state:string;
 export type Selection={kind:'cell';cell:Cell}|{kind:'outside';lon:number;lat:number}|null;
 export interface ChangeArea{state:string;block:string;areaHa:number;knownCells:number;anchorCellId:string;x:number;y:number;longitude:number;latitude:number;outline:[number,number,number,number][];}
 export interface ActivityMeta{type:string;period:[number,number];count:number;availableCells:number;missingCells:number;totalHa:number;stateTotals:Record<string,number>;callouts:ChangeArea[];bins:{lower:number;upper:number|null;label:string;colour:string}[];interpretation:string;}
-export interface DataBundle{study:StudyData;geo:GeoMeta;terrain:Float32Array|null;activity:ActivityMeta|null;conversion:Float64Array|null;issues:string[];}
+export interface MapData{meta:StudyMeta;geo:GeoMeta;terrain:Float32Array|null;activity:ActivityMeta|null;issues:string[];}
+export interface ResearchData{study:StudyData;conversion:Float64Array|null;}
+export type DataBundle=MapData&ResearchData;
 export class StudyData {
  view:DataView; lookup:Int32Array; byId:Map<string,number>;
  constructor(public meta:StudyMeta, public buffer:ArrayBuffer){
@@ -22,21 +24,33 @@ export class StudyData {
 }
 export async function fetchJSON<T>(file:string):Promise<T>{const r=await fetch(`./data/${file}`);if(!r.ok)throw Error(`${file} unavailable (${r.status}).`);return r.json();}
 async function binary(file:string){const r=await fetch(`./data/${file}`);if(!r.ok)throw Error(`${file} unavailable (${r.status}).`);return r.arrayBuffer();}
-export async function loadData():Promise<DataBundle>{
- const [meta,buffer,geo]=await Promise.all([fetchJSON<StudyMeta>('study-meta.json'),binary('study.bin'),fetchJSON<GeoMeta>('geo.json')]);
- const scope=await fetchJSON<{viewBounds:Bounds;land:GeoMeta['land'];features:Feature[]}>('display-scope.json');geo.viewBounds=scope.viewBounds;geo.land=scope.land;geo.features=scope.features;
- const issues:string[]=[];let terrain=null;
- try{const b=await binary(geo.terrain.file);if(b.byteLength!==geo.terrain.width*geo.terrain.height*4)throw Error('Terrain grid is incomplete.');terrain=new Float32Array(b);}catch(e){issues.push(String(e));}
- if(geo.forest.status==='ready'){
-  const available=await Promise.all([geo.forest.desktop,geo.forest.low].map(file=>fetch(`./data/${file}`,{method:'HEAD'}).then(r=>r.ok).catch(()=>false)));
-  if(available.some(ok=>!ok)){geo.forest={...geo.forest,status:'unavailable',message:'The local 2018 forest texture is missing. The research layer is unchanged.'};}
- }
- if(geo.forest.status!=='ready')issues.push(geo.forest.message||'The 2018 forest surface is unavailable.');
- let activity:ActivityMeta|null=null,conversion:Float64Array|null=null;
- try{const[a,b]=await Promise.all([fetchJSON<ActivityMeta>('activity.json'),binary('activity.bin')]);if(b.byteLength!==meta.count*8||a.count!==meta.count)throw Error('Outcome records are incomplete.');activity=a;conversion=new Float64Array(b);}catch(e){issues.push(`Observed conversion unavailable: ${String(e)}`);}
- return{study:new StudyData(meta,buffer),geo,terrain,activity,conversion,issues};
+export async function loadMapData():Promise<MapData>{
+ const geography=fetchJSON<GeoMeta>('geo.json');
+ const elevation=geography.then(async geo=>{
+  const buffer=await binary(geo.terrain.file);
+  if(buffer.byteLength!==geo.terrain.width*geo.terrain.height*4)throw Error('Terrain grid is incomplete.');
+  return new Float32Array(buffer);
+ }).then(terrain=>({terrain,issue:null}),err=>({terrain:null,issue:String(err)}));
+ const [meta,geo,scope,activity,{terrain,issue}]=await Promise.all([
+  fetchJSON<StudyMeta>('study-meta.json'),geography,
+  fetchJSON<Pick<GeoMeta,'viewBounds'|'land'|'features'>>('display-scope.json'),
+  fetchJSON<ActivityMeta>('activity.json').catch(()=>null),elevation
+ ]);
+ Object.assign(geo,scope);
+ const issues:string[]=[];
+ if(!activity||activity.count!==meta.count)issues.push('Observed conversion metadata unavailable.');
+ if(issue)issues.push(issue);
+ return {meta,geo,terrain,activity:activity?.count===meta.count?activity:null,issues};
 }
-export function terrainHeight(data:DataBundle,x:number,y:number){if(!data.terrain)return 0;const b=data.geo.bounds,w=data.geo.terrain.width,h=data.geo.terrain.height;const fx=Math.max(0,Math.min(w-1,(x-b[0])/(b[2]-b[0])*(w-1))),fy=Math.max(0,Math.min(h-1,(b[3]-y)/(b[3]-b[1])*(h-1)));const ix=Math.floor(fx),iy=Math.floor(fy),tx=fx-ix,ty=fy-iy;const val=(xx:number,yy:number)=>Math.max(0,data.terrain![Math.min(h-1,yy)*w+Math.min(w-1,xx)]);return (val(ix,iy)*(1-tx)*(1-ty)+val(ix+1,iy)*tx*(1-ty)+val(ix,iy+1)*(1-tx)*ty+val(ix+1,iy+1)*tx*ty)/1000*12;}
-export function toWorld(data:DataBundle,x:number,y:number):[number,number,number]{const b=data.geo.bounds;return[(x-(b[0]+b[2])/2)/1000,terrainHeight(data,x,y),((b[1]+b[3])/2-y)/1000];}
-export function fromWorld(data:DataBundle,x:number,z:number){const b=data.geo.bounds;return [x*1000+(b[0]+b[2])/2,(b[1]+b[3])/2-z*1000] as const;}
-export function selectAt(data:DataBundle,x:number,y:number,land:boolean):Selection{const [lon,lat]=unproject(x,y);const cell=data.study.atLonLat(lon,lat);if(cell)return{kind:'cell',cell};return land?{kind:'outside',lon,lat}:null;}
+export async function loadResearchData(map:MapData):Promise<ResearchData>{
+ const [buffer,outcomes]=await Promise.all([binary('study.bin'),map.activity?binary('activity.bin').catch(()=>null):null]);
+ return {study:new StudyData(map.meta,buffer),conversion:outcomes?.byteLength===map.meta.count*8?new Float64Array(outcomes):null};
+}
+export async function loadData():Promise<DataBundle>{
+ const map=await loadMapData();
+ return {...map,...await loadResearchData(map)};
+}
+export function terrainHeight(data:MapData,x:number,y:number){if(!data.terrain)return 0;const b=data.geo.bounds,w=data.geo.terrain.width,h=data.geo.terrain.height;const fx=Math.max(0,Math.min(w-1,(x-b[0])/(b[2]-b[0])*(w-1))),fy=Math.max(0,Math.min(h-1,(b[3]-y)/(b[3]-b[1])*(h-1)));const ix=Math.floor(fx),iy=Math.floor(fy),tx=fx-ix,ty=fy-iy;const val=(xx:number,yy:number)=>Math.max(0,data.terrain![Math.min(h-1,yy)*w+Math.min(w-1,xx)]);return (val(ix,iy)*(1-tx)*(1-ty)+val(ix+1,iy)*tx*(1-ty)+val(ix,iy+1)*(1-tx)*ty+val(ix+1,iy+1)*tx*ty)/1000*12;}
+export function toWorld(data:MapData,x:number,y:number):[number,number,number]{const b=data.geo.bounds;return[(x-(b[0]+b[2])/2)/1000,terrainHeight(data,x,y),((b[1]+b[3])/2-y)/1000];}
+export function fromWorld(data:MapData,x:number,z:number){const b=data.geo.bounds;return [x*1000+(b[0]+b[2])/2,(b[1]+b[3])/2-z*1000] as const;}
+export function selectAt(data:Pick<ResearchData,'study'>,x:number,y:number,land:boolean):Selection{const [lon,lat]=unproject(x,y);const cell=data.study.atLonLat(lon,lat);if(cell)return{kind:'cell',cell};return land?{kind:'outside',lon,lat}:null;}
