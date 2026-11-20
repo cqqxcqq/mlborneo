@@ -1,0 +1,56 @@
+{
+  "name": "mlborneo-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "check": "tsc -b && node --experimental-strip-types scripts/check-data.mjs && node scripts/check-activity.mjs && node scripts/experience.mjs --check && node scripts/check-forest.mjs && node scripts/check-natural-forest.mjs",
+    "check:geo": "node scripts/geographic-checks.mjs",
+    "data:inspect": "node scripts/inspect.mjs",
+    "data:prepare": "node scripts/prepare.mjs",
+    "start": "node scripts/serve.mjs",
+    "test:browser": "node scripts/field-notes-tests.mjs",
+    "test:forest:legacy": "node --experimental-strip-types scripts/forest-tests.mjs",
+    "test:soak": "node scripts/forest-soak.mjs",
+    "data:experience": "node scripts/experience.mjs",
+    "test:browser:legacy": "node scripts/rotation-tests.mjs",
+    "assets:forest": "node scripts/prepare-forest.mjs",
+    "test:soak:legacy": "node scripts/soak.mjs",
+    "check:forest": "node scripts/check-forest.mjs",
+    "package:exhibition": "node scripts/package-exhibition.mjs",
+    "test:surprise:legacy": "node --experimental-strip-types scripts/surprise-tests.mjs",
+    "assets:natural": "node scripts/prepare-natural-forest.mjs",
+    "check:natural": "node scripts/check-natural-forest.mjs",
+    "assets:acquire:natural": "powershell -NoProfile -File scripts/acquire-natural-forest.ps1",
+    "test:forest:dense": "node scripts/benchmark-natural-forest.mjs"
+  },
+  "dependencies": {
+    "@react-three/drei": "10.7.9",
+    "@react-three/fiber": "9.8.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.183.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "geotiff": "3.0.5",
+    "hyparquet": "1.31.5",
+    "hyparquet-compressors": "^1.1.1",
+    "playwright": "^1.56.0",
+    "pngjs": "^7.0.0",
+    "proj4": "^2.20.0",
+    "shapefile": "^0.6.6",
+    "fflate": "^0.8.2",
+    "typescript": "^6.0.0",
+    "vite": "8.3.5"
+  }
+}

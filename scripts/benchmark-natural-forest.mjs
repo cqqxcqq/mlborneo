@@ -1,0 +1,10 @@
+import {chromium} from 'playwright';
+import {writeFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({channel:'msedge',headless:true,args:['--enable-webgl','--ignore-gpu-blocklist']}),p=await browser.newPage({viewport:{width:1920,height:1080}});
+const ready=mode=>p.waitForFunction(m=>window.__MLBORNEO__?.ready&&window.__MLBORNEO__.viewMode===m,mode,{timeout:90000});
+await p.goto(`http://127.0.0.1:4173/${process.argv.includes('--low')?'?low':''}`);await ready('overview');await p.getByRole('button',{name:/Explore a forest|Another area/,exact:true}).click();await ready('forest');await p.waitForTimeout(250);
+for(let i=0;i<40&&await p.evaluate(()=>window.__MLBORNEO__.forest.areaHa<95);i++){await p.getByRole('button',{name:/Explore a forest|Another area/,exact:true}).click();await p.waitForTimeout(180);}
+assert.ok(await p.evaluate(()=>window.__MLBORNEO__.forest.areaHa>=95));
+await p.mouse.move(900,500);await p.mouse.down();await p.mouse.move(900,300,{steps:15});await p.mouse.up();await p.waitForTimeout(150);await p.locator('canvas').focus();const before=await p.evaluate(()=>window.__MLBORNEO__.diagnostics.renders),start=performance.now();await p.keyboard.down('d');await p.waitForTimeout(6000);await p.keyboard.up('d');await p.waitForTimeout(150);const state=await p.evaluate(()=>window.__MLBORNEO__),fps=(state.diagnostics.renders-before)/((performance.now()-start)/1000),report={at:new Date().toISOString(),profile:'1920x1080, dense forest (>=95ha), look into canopy and walk sideways',low:state.layers.low,fps,areaHa:state.forest.areaHa,trees:state.forest.treeCount,triangles:state.diagnostics.triangles,calls:state.diagnostics.calls,geometries:state.diagnostics.geometries,textures:state.diagnostics.textures,programs:state.diagnostics.programs,pass:fps>=45};
+await browser.close();await writeFile(`reports/natural-forest-dense${report.low?'-low':''}.json`,JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));if(!report.pass)process.exitCode=1;

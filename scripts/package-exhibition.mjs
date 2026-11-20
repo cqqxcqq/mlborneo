@@ -1,0 +1,20 @@
+import {readFile,writeFile,mkdir,readdir} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {createHash} from 'node:crypto';
+import {zipSync,unzipSync,strToU8} from 'fflate';
+const root=resolve(import.meta.dirname,'..'),entries={},sha=b=>createHash('sha256').update(b).digest('hex');
+const add=async(file,name=file)=>{entries[name]=new Uint8Array(await readFile(resolve(root,file)));};
+const walk=async(dir)=>{for(const e of(await readdir(resolve(root,dir),{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))){const file=`${dir}/${e.name}`;if(e.isDirectory())await walk(file);else await add(file);}};
+await walk('dist');for(const file of['Start-Exhibition.cmd','scripts/serve.mjs','DATA_NOTES.zh-CN.md','FOREST_ASSETS.zh-CN.md','VALIDATION.zh-CN.md','NATURAL_FOREST.zh-CN.md'])await add(file);
+for(const file of['browser-field-notes.json','natural-forest-assets.json','natural-forest-checks.json','natural-forest-dense.json','natural-forest-reproducibility.json','browser-surprise.json','browser-forest.json','browser-forest-edge.json','browser-forest-input.json','forest-checks.json','forest-assets.json','forest-reproducibility.json','forest-soak.json','check-data.json','activity-checks.json','geographic-verification.json'])await add(`reports/${file}`);
+entries['package.json']=strToU8(JSON.stringify({name:'mlborneo-exhibition',private:true,type:'module',engines:{node:'>=22.12.0'},scripts:{start:'node scripts/serve.mjs'}},null,2));
+entries['README.zh-CN.md']=strToU8('# MLBorneo 离线展示包\n\n安装Node.js 22.12或更新版本后，双击Start-Exhibition.cmd，打开 http://127.0.0.1:4173/ 。保持服务窗口运行，浏览器可按F11全屏。无需npm安装依赖，也无需互联网。请完整解压并保留目录，不要直接双击dist/index.html。\n\n在地图点击Explore a forest直接进入示意林地；林地内点击Another area换区域。也可点击地图，再选择Enter forest illustration直接进入。网格近景已移除。鼠标拖动环顾；按住方向按钮或使用WASD／方向键行走。走近纸签，点击或按E阅读；也可点林地内的Field notes。步行速度为3米／秒，不提供位置重置按钮或快捷键。阅读时停止移动，Esc先关闭便签，再直接返回地图；Back to map恢复进入前的地图状态。林地疏密按2018森林风险面积作美术映射，不是实测树数、已保护面积或实景重建。\n\n说明与检查记录见随包DATA_NOTES、FOREST_ASSETS、VALIDATION和reports。build-manifest.json记录各文件哈希及长期测试状态。实际展览电脑仍需复测。\n');
+const soak=JSON.parse(await readFile(resolve(root,'reports/forest-soak.json'),'utf8'));
+const currentBuild=Object.fromEntries(Object.entries(entries).filter(([name])=>name.startsWith('dist/')).map(([name,data])=>[name.slice(5),sha(data)]));
+const longRunBuildMatches=Object.keys(currentBuild).length===Object.keys(soak.inputHashes||{}).length&&Object.entries(currentBuild).every(([name,hash])=>soak.inputHashes?.[name]===hash);
+const manifest={packagedAt:new Date().toISOString(),longRunBuildMatches,longRunPassed:!!(longRunBuildMatches&&soak.complete&&soak.elapsedSeconds>=3600&&soak.errors.length===0&&soak.resourcesUnchanged),files:Object.fromEntries(Object.entries(entries).map(([name,data])=>[name,{bytes:data.length,sha256:sha(data)}]))};
+entries['build-manifest.json']=strToU8(JSON.stringify(manifest,null,2));
+const input=Object.fromEntries(Object.entries(entries).map(([name,data])=>[name,[data,{level:/\.(png|glb)$/i.test(name)?0:6}]])),zip=zipSync(input),unpacked=unzipSync(zip);
+for(const[name,data]of Object.entries(entries))if(!unpacked[name]||sha(unpacked[name])!==sha(data))throw Error(`Archive verification failed: ${name}`);
+await mkdir(resolve(root,'release'),{recursive:true});const file='release/MLBorneo-Exhibition.zip';await writeFile(resolve(root,file),zip);const report={at:new Date().toISOString(),file,bytes:zip.length,sha256:sha(zip),files:Object.keys(entries).length,allArchiveEntriesVerified:true,longRunBuildMatches,longRunPassed:manifest.longRunPassed};await writeFile(resolve(root,'reports/package-exhibition.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
+

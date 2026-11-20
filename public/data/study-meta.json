@@ -1,0 +1,62 @@
+{
+  "count": 197756,
+  "stride": 64,
+  "states": [
+    "Sarawak",
+    "Sabah"
+  ],
+  "statuses": [
+    "ELIGIBLE_PREDICTED",
+    "MODEL_ROW_BUT_LT5HA",
+    "NO_2018_MODEL_ROW"
+  ],
+  "splits": [
+    "DEVELOPMENT",
+    "STRICT_G0",
+    "FINAL_BUFFER_10KM"
+  ],
+  "grid": {
+    "minCol": -496,
+    "maxCol": 583,
+    "minRow": -483,
+    "maxRow": 236,
+    "width": 1080,
+    "height": 720,
+    "stepM": 1000,
+    "transform": [
+      1000,
+      0,
+      0,
+      0,
+      -1000,
+      0
+    ],
+    "centreOffsetM": [
+      500,
+      -500
+    ]
+  },
+  "crs": "+proj=laea +lat_0=3 +lon_0=114 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs",
+  "year": 2018,
+  "sampleIDs": {
+    "sabah": "Borneo1k_277_-277",
+    "sarawak": "Borneo1k_-190_55",
+    "sabahSarawakBoundary": "Borneo1k_166_-166",
+    "coast": "Borneo1k_-423_143",
+    "missing": "Borneo1k_-102_-33",
+    "ineligible": "Borneo1k_-100_-17",
+    "partial": "Borneo1k_-97_2"
+  },
+  "counts": {
+    "ELIGIBLE_PREDICTED": 173323,
+    "MODEL_ROW_BUT_LT5HA": 14528,
+    "NO_2018_MODEL_ROW": 9905
+  },
+  "eligible": 173323,
+  "riskAreaHa": 13704118.166988183,
+  "warningAreaHa": 1370411.816698792,
+  "partialSelection": {
+    "id": "Borneo1k_-97_2",
+    "fraction": 0.000009871548177532104
+  }
+}

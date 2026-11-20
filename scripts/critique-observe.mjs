@@ -1,0 +1,13 @@
+import {chromium} from 'playwright';
+import {mkdir,writeFile} from 'node:fs/promises';
+const dir='reports/critique-20261029';await mkdir(dir,{recursive:true});
+const browser=await chromium.launch({channel:'msedge',headless:true,args:['--enable-webgl','--ignore-gpu-blocklist']});const page=await browser.newPage({viewport:{width:1920,height:1080}});
+const ready=mode=>page.waitForFunction(m=>window.__MLBORNEO__?.ready&&window.__MLBORNEO__.viewMode===m,mode);
+const summary=()=>page.evaluate(()=>({text:document.querySelector('main').innerText,fonts:[...document.querySelectorAll('button,summary,footer,strong')].filter(e=>e.getBoundingClientRect().width>0).map(e=>({text:e.textContent,font:getComputedStyle(e).fontSize,width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})),state:window.__MLBORNEO__}));
+await page.goto('http://127.0.0.1:4173/');await ready('overview');const map=await summary();await page.screenshot({path:dir+'/map.png'});
+await page.getByRole('button',{name:'Surprise me',exact:true}).click();await ready('forest');const forest=await summary();await page.screenshot({path:dir+'/forest.png'});
+await page.locator('canvas').focus();await page.keyboard.down('w');await page.waitForTimeout(2000);await page.keyboard.up('w');await page.getByRole('button',{name:'Field notes',exact:true}).click();await page.screenshot({path:dir+'/reading.png'});const reading=await summary();
+await page.setViewportSize({width:390,height:844});await page.screenshot({path:dir+'/mobile-reading.png'});
+await page.keyboard.press('Escape');await page.keyboard.press('Escape');await ready('overview');await page.screenshot({path:dir+'/mobile-map.png'});
+await page.emulateMedia({reducedMotion:'reduce'});await page.reload();await ready('overview');const reduced=await summary();
+const result={at:new Date().toISOString(),map,forest,reading,reducedMotionRotating:reduced.state.layers.rotating};await writeFile(dir+'/observations.json',JSON.stringify(result,null,2));console.log(JSON.stringify({mapFonts:map.fonts,forestFonts:forest.fonts,readingText:reading.text,reducedMotionRotating:result.reducedMotionRotating}));await browser.close();
