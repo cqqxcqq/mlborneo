@@ -19,6 +19,13 @@ function CellData({cell,value,compact=false}:{cell:Cell;value:number|undefined;c
 function Arrow({rotation}:{rotation:number}){return <svg viewBox="0 0 24 24" aria-hidden="true" style={{transform:`rotate(${rotation}deg)`}}><path d="M12 20V4M5 11l7-7 7 7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>;}
 export default function App(){
  const [data,setData]=useState<MapData|null>(null),[error,setError]=useState(''),[forest,setForest]=useState(true),[mode,setMode]=useState<'change'|'priority'|'forest'>('change'),[rotating,setRotating]=useState(true),[webgl,setWebgl]=useState(supportsWebGL),[flat,setFlat]=useState(()=>new URLSearchParams(location.search).has('flat')||!webgl),[low,setLow]=useState(()=>new URLSearchParams(location.search).has('low')||navigator.hardwareConcurrency<=4),[selection,setSelection]=useState<Selection>(null),[notice,setNotice]=useState(''),[ready,setReady]=useState(false),[viewMode,setViewMode]=useState<ViewMode>('overview'),[forestError,setForestError]=useState(''),[forestCommand,setForestCommand]=useState(0);
+ const [tour,setTour]=useState<'idle'|'map'|'loading'|'forest'>('idle');
+ const tourRunning=useRef(false),tourGeneration=useRef(0),tourIndex=useRef(0),tourLookedUp=useRef(false);
+ const stopTour=()=>{
+  if(!tourRunning.current)return;
+  tourRunning.current=false;tourGeneration.current++;setTour('idle');setRotating(false);
+  forestInput.current.action=undefined;setForestCommand(value=>value+1);
+ };
  const [research,setResearch]=useState<ResearchData|null>(null);
  const [lookupPending,setLookupPending]=useState(false);
  const [pendingPoint,setPendingPoint]=useState<[number,number]|null>(null);
@@ -68,8 +75,8 @@ export default function App(){
   finally{if(request===selectionRequest.current)setLookupPending(false);}
  };
  const back=(forceFlat=false)=>{setOpenNoteId(null);if(comparisonOrigin)setSelection({kind:'cell',cell:comparisonOrigin});forestInput.current=idleForestInput();restoreFocus.current=enteredBySurprise.current?'surprise':'enter';setReady(false);setViewMode('overview');setMode(previousMap.current.mode);setForest(previousMap.current.forest);setFlat(forceFlat||previousMap.current.flat||!webgl);setRotating(true);};
- const fail=(message:string)=>{if(entering.current!==null){window.clearTimeout(entering.current);entering.current=null;}setOpenNoteId(null);setNotice(message);setWebgl(false);if(viewMode==='forest')back(true);else{setFlat(true);setReady(false);}};
- const forestFail=(message:string)=>{if(window.__MLBORNEO__)Object.assign(window.__MLBORNEO__,{forestFailure:message});setForestError('Forest illustration could not load. Please retry from the selected area.');back();};
+ const fail=(message:string)=>{stopTour();if(entering.current!==null){window.clearTimeout(entering.current);entering.current=null;}setOpenNoteId(null);setNotice(message);setWebgl(false);if(viewMode==='forest')back(true);else{setFlat(true);setReady(false);}};
+ const forestFail=(message:string)=>{stopTour();if(window.__MLBORNEO__)Object.assign(window.__MLBORNEO__,{forestFailure:message});setForestError('Forest illustration could not load. Please retry from the selected area.');back();};
  const pick=(value:Selection)=>{
   if(viewMode!=='overview'||entering.current!==null)return;
   selectionRequest.current++;setLookupPending(false);setPendingPoint(null);setSelection(value);
@@ -85,6 +92,47 @@ export default function App(){
  const control=(forward:number,side:number)=>{if(openNoteId)return;if(forward||side)forestInput.current.action=undefined;forestInput.current.forward=forward;forestInput.current.side=side;setForestCommand(v=>v+1);};
  const approach=(id:string)=>{forestInput.current.action={kind:'approach',noteId:id};setForestCommand(v=>v+1);};
  const lookUp=()=>{forestInput.current.action={kind:'lookUp',noteId:'habitat'};setForestCommand(v=>v+1);};
+ const startTour=()=>{
+  if(!ready||flat||reducedMotion||entering.current!==null)return;
+  selectionRequest.current++;setLookupPending(false);setPendingPoint(null);
+  tourRunning.current=true;setTour('map');
+ };
+ const tourOrbitComplete=async()=>{
+  if(!tourRunning.current)return;
+  const generation=tourGeneration.current;
+  setTour('loading');setRotating(false);
+  try{
+   const records=await getResearch();
+   if(!tourRunning.current||generation!==tourGeneration.current)return;
+   const places=['sabah','sarawak','sabahSarawakBoundary'].map(key=>records.study.find(records.study.meta.sampleIDs[key])).filter((place):place is Cell=>!!place&&place.area>=25&&forestDensity(place.area)!==null);
+   if(!places.length)throw Error('No tour locations available');
+   visit(places[tourIndex.current++%places.length],true);
+   restoreFocus.current=null;
+  }catch{if(tourRunning.current&&generation===tourGeneration.current){stopTour();setNotice('Auto Tour could not load a forest. Try again.');}}
+ };
+ useEffect(()=>{
+  if(tour!=='loading')return;
+  const timer=window.setTimeout(()=>{
+   if(!tourRunning.current)return;
+   stopTour();
+   if(viewMode==='forest')back();
+   setNotice('Auto Tour stopped because the forest took too long to load.');
+  },30000);
+  return()=>window.clearTimeout(timer);
+ },[tour,viewMode]);
+ useEffect(()=>{if(tourRunning.current&&reducedMotion)stopTour();},[reducedMotion]);
+ useEffect(()=>{
+  if(tour!=='loading'||viewMode!=='forest'||!ready)return;
+  tourLookedUp.current=false;approach('habitat');setTour('forest');
+ },[tour,viewMode,ready]);
+ useEffect(()=>{
+  if(tour!=='forest')return;
+  const timer=window.setTimeout(()=>{if(tourRunning.current){back();restoreFocus.current=null;setTour('map');}},12000);
+  return()=>window.clearTimeout(timer);
+ },[tour]);
+ useEffect(()=>{
+  if(tour==='forest'&&station==='canopy'&&!tourLookedUp.current){tourLookedUp.current=true;lookUp();}
+ },[tour,station]);
  const alternate=useMemo(()=>research&&cell&&viewMode==='forest'?comparisonCell(research.study,groups,cell):null,[research,groups,cell,viewMode]);
  const compare=()=>{
   const next=comparisonOrigin??alternate;
@@ -96,8 +144,11 @@ export default function App(){
  };
  const mapProps=data?{data,forest,priority:mode==='priority',change:observed,rotating:rotating&&!reducedMotion&&viewMode==='overview'&&!openNoteId,selection,onSelect:pick,onReady:()=>setReady(true),viewMode,restoreView:overviewView.current}:null;
  return <main ref={main} data-view={viewMode} data-reading={!!openNoteId} className={`${s.mapOnly} ${s.localViewer} ${viewMode==='forest'?s.forestView:''} ${openNoteId?s.readingNote:''}`} tabIndex={0} aria-label="Forest research map. Select an area or choose Explore a forest to enter a forest illustration."
+ onWheelCapture={stopTour}
+ onPointerDownCapture={e=>{if(!(e.target instanceof Element&&e.target.closest('[data-tour-button]')))stopTour();}}
+ onKeyDownCapture={e=>{if(!tourRunning.current||e.key==='Tab'||e.target instanceof Element&&e.target.closest('[data-tour-button]')&&['Enter',' '].includes(e.key))return;stopTour();if(e.key==='Escape'){e.preventDefault();e.stopPropagation();}}}
  onKeyDown={e=>{if(e.key==='Escape'){if(openNoteId){e.preventDefault();closeNote();return;}if(viewMode!=='overview'){e.preventDefault();back();}return;}if(openNoteId)return;if(e.altKey||e.ctrlKey||e.metaKey||e.target instanceof HTMLElement&&(e.target.matches('input,textarea,select,button,summary')||e.target.isContentEditable))return;const k=e.key.toLowerCase();if(viewMode==='forest')return;if(['r','t','+','=','-','f','p','c','m','l'].includes(k))e.preventDefault();if(k==='r')map.current?.reset();if(k==='t')map.current?.top();if(k==='+'||k==='=')map.current?.zoom(1.2);if(k==='-')map.current?.zoom(1/1.2);if(k==='f')setForest(v=>!v);if(k==='p')setMode(v=>v==='priority'?'change':'priority');if(k==='c')setMode(v=>v==='change'?'forest':'change');if(k==='m')toggleFlat();if(k==='l')setLow(v=>!v);}}>
- {!data?<p className={s.mapLoading} role="status">{error?`Local map resources unavailable. ${error}`:'Loading the local map…'}</p>:flat&&viewMode!=='forest'?(flatData?<FlatMap key={viewMode} ref={map} {...mapProps!} data={flatData}/>:<p className={s.mapLoading} role="status">Loading the flat map…</p>):<MapErrorBoundary onFailure={fail}><Suspense fallback={<p className={s.mapLoading}>Loading the terrain…</p>}><Map3D ref={map} {...mapProps!} study={research?.study} pendingPoint={pendingPoint} onMapPoint={pickPoint} low={low} onFailure={fail} forestInput={forestInput} forestCommand={forestCommand} forestAreaHa={cell?.area??NaN} wind={motion} reducedMotion={reducedMotion} clearingButton={clearingButton} onStation={setStation} onCanopyView={setCanopyView} reading={!!openNoteId} noteButtons={noteButtons} onOpenNote={showNote} onForestFailure={forestFail}/></Suspense></MapErrorBoundary>}
+ {!data?<p className={s.mapLoading} role="status">{error?`Local map resources unavailable. ${error}`:'Loading the local map…'}</p>:flat&&viewMode!=='forest'?(flatData?<FlatMap key={viewMode} ref={map} {...mapProps!} data={flatData}/>:<p className={s.mapLoading} role="status">Loading the flat map…</p>):<MapErrorBoundary onFailure={fail}><Suspense fallback={<p className={s.mapLoading}>Loading the terrain…</p>}><Map3D ref={map} {...mapProps!} study={research?.study} pendingPoint={pendingPoint} tourOrbit={tour==='map'&&ready&&!reducedMotion} onTourOrbitComplete={tourOrbitComplete} onMapPoint={pickPoint} low={low} onFailure={fail} forestInput={forestInput} forestCommand={forestCommand} forestAreaHa={cell?.area??NaN} wind={motion} reducedMotion={reducedMotion} clearingButton={clearingButton} onStation={setStation} onCanopyView={setCanopyView} reading={!!openNoteId} noteButtons={noteButtons} onOpenNote={showNote} onForestFailure={forestFail}/></Suspense></MapErrorBoundary>}
  {viewMode==='forest'&&<button ref={notesMenu} className={s.notesMenu} onClick={()=>showNote('habitat')}>Field notes</button>}
  {viewMode==='forest'&&<FieldNotesLayer buttons={noteButtons} onOpen={showNote} onApproach={approach} opened={openedNotes}/>}
  {viewMode==='forest'&&openNoteId&&<FieldNotePanel id={openNoteId} notes={notes} error={noteError} onOpen={showNote} onClose={closeNote} onRetry={loadNotes}/>}
@@ -106,12 +157,12 @@ export default function App(){
  {viewMode!=='forest'&&mode==='priority'&&<p className={s.modeNote}>2018 monitoring priority · relative rank, not loss probability</p>}
  {viewMode==='overview'&&<>
   {lookupPending&&<p className={s.outsideNote} role="status">Loading research records…</p>}
-  <nav className={s.mapUtilities} aria-label="Map controls"><button ref={surpriseButton} className={s.surpriseAction} disabled={!ready||lookupPending||!webgl} onClick={surprise}>Explore a forest</button><button aria-pressed={mode==='change'} onClick={()=>setMode('change')}>Observed change</button><button aria-pressed={mode==='priority'} onClick={()=>setMode('priority')}>Monitoring priority</button></nav>
+  <nav className={s.mapUtilities} aria-label="Map controls"><button ref={surpriseButton} className={s.surpriseAction} disabled={!ready||lookupPending||!webgl} onClick={surprise}>Explore a forest</button><button aria-pressed={mode==='change'} onClick={()=>setMode('change')}>Observed change</button><button aria-pressed={mode==='priority'} onClick={()=>setMode('priority')}>Monitoring priority</button>{!flat&&!reducedMotion&&<button data-tour-button disabled={tour==='idle'&&!ready} onClick={tour==='idle'?startTour:stopTour}>{tour==='idle'?'Auto Tour':'Stop Tour'}</button>}</nav>
   {cell?<aside className={s.cellDock} aria-label="Selected cell"><strong>{cell.state}</strong><span>Selected research area · 1 km²</span><button ref={enterButton} disabled={!ready||!webgl||!hasForestArea} onClick={enter}>{forestError?'Retry forest illustration':'Enter forest illustration'}</button>{!hasForestArea&&<small>Forest-area data unavailable for this grid.</small>}<details><summary>Cell data</summary><CellData cell={cell} value={value}/></details></aside>:selection?.kind==='outside'?<p className={s.outsideNote} role="status">Outside the study area</p>:null}
   {!webgl&&<p className={s.outsideNote} role="status">Forest view needs WebGL support. The flat map is available.</p>}
  </>}
  {viewMode==='forest'&&cell&&<>
-  <nav className={s.localActions} aria-label="Forest view controls"><button onClick={()=>back()}>Back to map</button><button disabled={!ready} onClick={surprise}>Another area</button></nav>
+  <nav className={s.localActions} aria-label="Forest view controls"><button onClick={()=>back()}>Back to map</button><button disabled={!ready} onClick={surprise}>Another area</button>{tour!=='idle'&&<button data-tour-button onClick={stopTour}>Stop Tour</button>}</nav>
   <button ref={clearingButton} className={s.clearingMarker} hidden onClick={()=>approach('clearing')}>Walk to the clearing</button>
   <div className={s.forestActions}>
    {(station==='canopy'||canopyView)&&<button onClick={lookUp}>{canopyView?'Look ahead':'Look up'}</button>}
