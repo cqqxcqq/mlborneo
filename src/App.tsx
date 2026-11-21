@@ -19,12 +19,12 @@ function CellData({cell,value,compact=false}:{cell:Cell;value:number|undefined;c
 function Arrow({rotation}:{rotation:number}){return <svg viewBox="0 0 24 24" aria-hidden="true" style={{transform:`rotate(${rotation}deg)`}}><path d="M12 20V4M5 11l7-7 7 7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>;}
 export default function App(){
  const [data,setData]=useState<MapData|null>(null),[error,setError]=useState(''),[forest,setForest]=useState(true),[mode,setMode]=useState<'change'|'priority'|'forest'>('change'),[rotating,setRotating]=useState(true),[webgl,setWebgl]=useState(supportsWebGL),[flat,setFlat]=useState(()=>new URLSearchParams(location.search).has('flat')||!webgl),[low,setLow]=useState(()=>new URLSearchParams(location.search).has('low')||navigator.hardwareConcurrency<=4),[selection,setSelection]=useState<Selection>(null),[notice,setNotice]=useState(''),[ready,setReady]=useState(false),[viewMode,setViewMode]=useState<ViewMode>('overview'),[forestError,setForestError]=useState(''),[forestCommand,setForestCommand]=useState(0);
- const [tour,setTour]=useState<'idle'|'map'|'loading'|'forest'>('idle');
+ const [tour,setTour]=useState<'idle'|'map'|'focus'|'loading'|'forest'>('idle');
  const tourRunning=useRef(false),tourGeneration=useRef(0),tourIndex=useRef(0),tourLookedUp=useRef(false);
  const stopTour=()=>{
   if(!tourRunning.current)return;
   tourRunning.current=false;tourGeneration.current++;setTour('idle');setRotating(false);
-  forestInput.current.action=undefined;setForestCommand(value=>value+1);
+  map.current?.cancelFocus?.();forestInput.current.action=undefined;setForestCommand(value=>value+1);
  };
  const [research,setResearch]=useState<ResearchData|null>(null);
  const [lookupPending,setLookupPending]=useState(false);
@@ -106,8 +106,13 @@ export default function App(){
    if(!tourRunning.current||generation!==tourGeneration.current)return;
    const places=['sabah','sarawak','sabahSarawakBoundary'].map(key=>records.study.find(records.study.meta.sampleIDs[key])).filter((place):place is Cell=>!!place&&place.area>=25&&forestDensity(place.area)!==null);
    if(!places.length)throw Error('No tour locations available');
-   visit(places[tourIndex.current++%places.length],true);
-   restoreFocus.current=null;
+   const place=places[tourIndex.current++%places.length];
+   overviewView.current=map.current?.snapshot();
+   setSelection({kind:'cell',cell:place});setTour('focus');
+   map.current?.focusCell?.(place,()=>{
+    if(!tourRunning.current||generation!==tourGeneration.current)return;
+    setTour('loading');visit(place,true,true);restoreFocus.current=null;
+   });
   }catch{if(tourRunning.current&&generation===tourGeneration.current){stopTour();setNotice('Auto Tour could not load a forest. Try again.');}}
  };
  useEffect(()=>{
